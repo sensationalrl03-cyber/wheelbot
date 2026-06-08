@@ -24,6 +24,8 @@ if not TOKEN:
 # BOT SETUP
 # --------------------
 intents = discord.Intents.default()
+intents.message_content = True  # safer for future features
+
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 # --------------------
@@ -45,119 +47,65 @@ def save_wheels():
         json.dump(wheels, f, indent=2)
 
 # --------------------
-# WHEEL IMAGE
+# FAST WHEEL RENDERER (FIXED)
 # --------------------
 def create_wheel_image(items, rotation=0, winner=None, filename="wheel.png"):
     size = 1000
-
-    bg_color = (255, 230, 240)
-
-    dark_pink = (255, 105, 180)
-    light_pink = (255, 182, 193)
-
-    img = Image.new("RGB", (size, size), bg_color)
-    draw = ImageDraw.Draw(img)
-
     center = size // 2
     radius = 430
 
-    angle_per = 360 / len(items)
+    img = Image.new("RGB", (size, size), (255, 230, 240))
+    draw = ImageDraw.Draw(img)
+
+    angle_step = 360 / len(items)
 
     try:
-        font = ImageFont.truetype("arial.ttf", 52)
+        font = ImageFont.truetype("arial.ttf", 42)
     except:
         font = ImageFont.load_default()
 
     for i, item in enumerate(items):
-        start = -90 + rotation + (i * angle_per)
-        end = start + angle_per
+        start = -90 + rotation + i * angle_step
+        end = start + angle_step
 
-        color = dark_pink if i % 2 == 0 else light_pink
-
-        if item == winner:
+        color = (255, 105, 180) if i % 2 == 0 else (255, 182, 193)
+        if winner and item == winner:
             color = (255, 60, 150)
 
+        # slice
         draw.pieslice(
-            (
-                center - radius,
-                center - radius,
-                center + radius,
-                center + radius,
-            ),
+            (center - radius, center - radius, center + radius, center + radius),
             start=start,
             end=end,
             fill=color,
             outline="white",
-            width=4,
+            width=3,
         )
 
-        label_angle = start + angle_per / 2
+        # label position
+        mid_angle = math.radians(start + angle_step / 2)
+        text_radius = radius * 0.72
 
-text_radius = radius * 0.72
+        x = center + math.cos(mid_angle) * text_radius
+        y = center + math.sin(mid_angle) * text_radius
 
-x = center + math.cos(math.radians(label_angle)) * text_radius
-y = center + math.sin(math.radians(label_angle)) * text_radius
+        # text size
+        bbox = draw.textbbox((0, 0), item, font=font)
+        w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
 
-bbox = draw.textbbox((0, 0), item, font=font)
-
-tw = bbox[2] - bbox[0]
-th = bbox[3] - bbox[1]
-
-label_img = Image.new(
-    "RGBA",
-    (tw + 40, th + 40),
-    (0, 0, 0, 0)
-)
-
-label_draw = ImageDraw.Draw(label_img)
-
-# black outline
-for ox in (-2, -1, 0, 1, 2):
-    for oy in (-2, -1, 0, 1, 2):
-        if ox != 0 or oy != 0:
-            label_draw.text(
-                (20 + ox, 20 + oy),
-                item,
-                font=font,
-                fill="black"
-            )
-
-# white text
-label_draw.text(
-    (20, 20),
-    item,
-    font=font,
-    fill="white"
-)
-
-rotated = label_img.rotate(
-    label_angle + 90,
-    expand=True,
-    resample=Image.BICUBIC
-)
-
-img.paste(
-    rotated,
-    (
-        int(x - rotated.width / 2),
-        int(y - rotated.height / 2)
-    ),
-    rotated
-)
-
-        
+        draw.text(
+            (x - w / 2, y - h / 2),
+            item,
+            fill="black",
+            font=font
+        )
 
     # center button
     draw.ellipse(
-        (
-            center - 90,
-            center - 90,
-            center + 90,
-            center + 90,
-        ),
+        (center - 90, center - 90, center + 90, center + 90),
         fill="black",
         outline="white",
-        width=6,
+        width=5,
     )
 
     draw.text(
@@ -167,21 +115,18 @@ img.paste(
         font=font,
     )
 
-    # POINTER
-    pointer_y = center - radius - 15
-
+    # pointer
     draw.polygon(
         [
-            (center, pointer_y),
-            (center - 35, pointer_y - 70),
-            (center + 35, pointer_y - 70),
+            (center, center - radius - 10),
+            (center - 30, center - radius - 70),
+            (center + 30, center - radius - 70),
         ],
         fill="white",
         outline="black",
     )
 
     img.save(filename)
-
     return filename
 
 # --------------------
@@ -191,27 +136,17 @@ async def spin_animation(interaction, items, winner):
     await interaction.response.send_message("🎡 Spinning wheel...")
 
     winner_index = items.index(winner)
+    angle_step = 360 / len(items)
 
-    angle_per = 360 / len(items)
-
-    target_rotation = (
-        360 * 5
-        + (270 - ((winner_index + 0.5) * angle_per))
-    )
+    target_rotation = 360 * 5 + (270 - ((winner_index + 0.5) * angle_step))
 
     frames = 20
 
     for frame in range(frames):
         progress = frame / (frames - 1)
-
         rotation = target_rotation * (progress ** 0.6)
 
-        img = create_wheel_image(
-            items,
-            rotation=rotation,
-            filename="spin.png"
-        )
-
+        img = create_wheel_image(items, rotation=rotation)
         file = discord.File(img)
 
         await interaction.edit_original_response(
@@ -234,20 +169,19 @@ async def spin_animation(interaction, items, winner):
         content=f"🏆 WINNER: **{winner}**",
         attachments=[file]
     )
+
 # --------------------
-# READY
+# EVENTS
 # --------------------
 @bot.event
 async def on_ready():
     load_wheels()
     await bot.tree.sync()
     print(f"Logged in as {bot.user}")
-    print("Commands synced")
 
 # --------------------
 # COMMANDS
 # --------------------
-
 @bot.tree.command(name="wheel_create")
 async def wheel_create(interaction: discord.Interaction, name: str):
     if name in wheels:
@@ -267,24 +201,16 @@ async def wheel_add(interaction: discord.Interaction, name: str, item: str):
     await interaction.response.send_message(f"➕ Added **{item}**")
 
 @bot.tree.command(name="wheel_add_many")
-async def wheel_add_many(
-    interaction: discord.Interaction,
-    name: str,
-    items: str
-):
+async def wheel_add_many(interaction: discord.Interaction, name: str, items: str):
     if name not in wheels:
         await interaction.response.send_message("Wheel not found.")
         return
 
-    # Split by commas
-    new_items = [item.strip() for item in items.split(",") if item.strip()]
-
+    new_items = [i.strip() for i in items.split(",") if i.strip()]
     wheels[name].extend(new_items)
     save_wheels()
 
-    await interaction.response.send_message(
-        f"➕ Added {len(new_items)} items to **{name}**"
-    )
+    await interaction.response.send_message(f"➕ Added {len(new_items)} items")
 
 @bot.tree.command(name="wheel_spin")
 async def wheel_spin(interaction: discord.Interaction, name: str):
@@ -309,7 +235,7 @@ async def hello(interaction: discord.Interaction):
     await interaction.response.send_message(f"Hello {interaction.user.mention}")
 
 # --------------------
-# RUN
+# FLASK + BOT
 # --------------------
 app = Flask(__name__)
 
@@ -319,7 +245,8 @@ def home():
 
 def run_web():
     port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port)
+    app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)
 
 threading.Thread(target=run_web, daemon=True).start()
+
 bot.run(TOKEN)

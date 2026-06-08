@@ -1,18 +1,24 @@
-from flask import Flask
-import threading
 import os
 import random
 import json
 import discord
 from discord.ext import commands
 from dotenv import load_dotenv
+from http.server import BaseHTTPRequestHandler, HTTPServer
+import threading
 
 # --------------------
-# ENV / BOT SETUP
+# LOAD ENV
 # --------------------
 load_dotenv()
 TOKEN = os.getenv("DISCORD_TOKEN")
 
+if TOKEN is None:
+    raise ValueError("DISCORD_TOKEN is missing in environment variables")
+
+# --------------------
+# DISCORD BOT SETUP
+# --------------------
 intents = discord.Intents.default()
 bot = commands.Bot(command_prefix="!", intents=intents)
 
@@ -20,23 +26,34 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 # DATA STORAGE
 # --------------------
 DATA_FILE = "wheels.json"
-
 wheels = {}
 
-# --------------------
-# SAVE / LOAD SYSTEM
-# --------------------
 def load_wheels():
     global wheels
     try:
         with open(DATA_FILE, "r", encoding="utf-8") as f:
             wheels = json.load(f)
-    except FileNotFoundError:
+    except:
         wheels = {}
 
 def save_wheels():
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump(wheels, f, indent=2)
+
+# --------------------
+# SIMPLE WEB SERVER (RENDER PORT FIX)
+# --------------------
+def run_web():
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"Bot is running")
+
+    server = HTTPServer(("0.0.0.0", 10000), Handler)
+    server.serve_forever()
+
+threading.Thread(target=run_web, daemon=True).start()
 
 # --------------------
 # BOT READY
@@ -54,11 +71,11 @@ async def on_ready():
         print(f"Sync error: {e}")
 
 # --------------------
-# CREATE WHEEL
+# COMMANDS
 # --------------------
+
 @bot.tree.command(name="wheel_create", description="Create a new wheel")
 async def wheel_create(interaction: discord.Interaction, name: str):
-
     if name in wheels:
         await interaction.response.send_message("Wheel already exists.")
         return
@@ -68,12 +85,8 @@ async def wheel_create(interaction: discord.Interaction, name: str):
 
     await interaction.response.send_message(f"🎡 Wheel '{name}' created.")
 
-# --------------------
-# ADD ITEM
-# --------------------
 @bot.tree.command(name="wheel_add", description="Add item to a wheel")
 async def wheel_add(interaction: discord.Interaction, name: str, item: str):
-
     if name not in wheels:
         await interaction.response.send_message("Wheel not found.")
         return
@@ -81,16 +94,10 @@ async def wheel_add(interaction: discord.Interaction, name: str, item: str):
     wheels[name].append(item)
     save_wheels()
 
-    await interaction.response.send_message(
-        f"➕ Added '{item}' to '{name}'."
-    )
+    await interaction.response.send_message(f"➕ Added '{item}' to '{name}'.")
 
-# --------------------
-# SPIN WHEEL
-# --------------------
 @bot.tree.command(name="wheel_spin", description="Spin a wheel")
 async def wheel_spin(interaction: discord.Interaction, name: str, remove: bool = False):
-
     if name not in wheels or not wheels[name]:
         await interaction.response.send_message("Wheel is empty or doesn't exist.")
         return
@@ -103,12 +110,8 @@ async def wheel_spin(interaction: discord.Interaction, name: str, remove: bool =
 
     await interaction.response.send_message(f"🎡 You spun: **{result}**")
 
-# --------------------
-# RESET WHEEL
-# --------------------
-@bot.tree.command(name="wheel_reset", description="Clear all items from a wheel")
+@bot.tree.command(name="wheel_reset", description="Reset a wheel")
 async def wheel_reset(interaction: discord.Interaction, name: str):
-
     if name not in wheels:
         await interaction.response.send_message("Wheel not found.")
         return
@@ -118,25 +121,13 @@ async def wheel_reset(interaction: discord.Interaction, name: str):
 
     await interaction.response.send_message(f"🔄 Wheel '{name}' reset.")
 
-# --------------------
-# HELLO TEST
-# --------------------
 @bot.tree.command(name="hello", description="Say hello")
 async def hello(interaction: discord.Interaction):
     await interaction.response.send_message(
         f"Hello {interaction.user.mention}!"
     )
 
-app = Flask(__name__)
-
-@app.route("/")
-def home():
-    return "Bot is running"
-
-def run_web():
-    app.run(host="0.0.0.0", port=10000)
 # --------------------
 # RUN BOT
 # --------------------
-threading.Thread(target=run_web, daemon=True).start()
 bot.run(TOKEN)

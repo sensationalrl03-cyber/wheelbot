@@ -64,15 +64,49 @@ def _wheel_font(size):
     return ImageFont.load_default()
 
 
-def _fit_slice_font(text, base_size, max_width):
-    """Shrink font until the label fits inside the slice arc."""
-    for size in range(base_size, 20, -2):
-        font = _wheel_font(size)
-        measure = ImageDraw.Draw(Image.new("RGBA", (1, 1)))
-        bbox = measure.textbbox((0, 0), text, font=font)
-        if bbox[2] - bbox[0] <= max_width:
-            return font
-    return _wheel_font(20)
+def _slice_text_limits(text_radius, angle_step, wheel_radius, hub_radius=100):
+    """Max tangential and radial space for a label inside one slice."""
+    tangential = 2 * text_radius * math.sin(math.radians(angle_step / 2)) * 0.86
+    radial_in = text_radius - hub_radius
+    radial_out = wheel_radius - text_radius
+    radial = 2 * min(radial_in, radial_out) * 0.86
+    return tangential, radial
+
+
+def _label_spans(text, size, mid_angle_deg, stroke):
+    """How far the rotated label extends along radial and tangential axes."""
+    measure = ImageDraw.Draw(Image.new("RGBA", (1, 1)))
+    font = _wheel_font(size)
+    bbox = measure.textbbox((0, 0), text, font=font, stroke_width=stroke)
+    pad = stroke + 6
+    label = Image.new(
+        "RGBA",
+        (bbox[2] - bbox[0] + pad * 2, bbox[3] - bbox[1] + pad * 2),
+        (0, 0, 0, 0),
+    )
+    ImageDraw.Draw(label).text(
+        (pad - bbox[0], pad - bbox[1]),
+        text,
+        font=font,
+        fill="white",
+        stroke_width=stroke,
+        stroke_fill="black",
+    )
+    rotated = label.rotate(-mid_angle_deg, expand=True, resample=Image.Resampling.BICUBIC)
+    cos_a, sin_a = abs(math.cos(math.radians(mid_angle_deg))), abs(math.sin(math.radians(mid_angle_deg)))
+    radial = rotated.width * cos_a + rotated.height * sin_a
+    tangential = rotated.width * sin_a + rotated.height * cos_a
+    return radial, tangential
+
+
+def _fit_slice_font(text, base_size, max_tangential, max_radial, mid_angle_deg):
+    """Shrink font until the rotated label fits inside the slice."""
+    for size in range(base_size, 10, -1):
+        stroke = max(1, size // 20)
+        radial, tangential = _label_spans(text, size, mid_angle_deg, stroke)
+        if radial <= max_radial and tangential <= max_tangential:
+            return _wheel_font(size), stroke
+    return _wheel_font(10), 1
 
 
 def _draw_winner_banner(draw, width, height, winner):
@@ -145,15 +179,19 @@ def _draw_winner_banner(draw, width, height, winner):
     )
 
 
-def _draw_slice_label(img, text, center_x, center_y, mid_angle_deg, text_radius, base_font_size, angle_step):
+def _draw_slice_label(
+    img, text, center_x, center_y, mid_angle_deg, text_radius, base_font_size, angle_step, wheel_radius
+):
     """Bold white label with black outline, rotated to follow the slice radius."""
     rad = math.radians(mid_angle_deg)
     x = center_x + math.cos(rad) * text_radius
     y = center_y + math.sin(rad) * text_radius
 
-    arc_width = 2 * text_radius * math.sin(math.radians(angle_step / 2)) * 0.90
-    font = _fit_slice_font(text, base_font_size, arc_width)
-    stroke = max(2, base_font_size // 18)
+    max_tangential, max_radial = _slice_text_limits(text_radius, angle_step, wheel_radius)
+    # Start smaller for longer strings so we need fewer shrink steps.
+    length_factor = max(0.35, min(1.0, 6 / max(len(text), 1)))
+    start_size = max(10, int(base_font_size * length_factor))
+    font, stroke = _fit_slice_font(text, start_size, max_tangential, max_radial, mid_angle_deg)
 
     measure = ImageDraw.Draw(Image.new("RGBA", (1, 1)))
     bbox = measure.textbbox((0, 0), text, font=font, stroke_width=stroke)
@@ -225,7 +263,15 @@ def create_wheel_image(items, rotation=0, winner=None, filename="wheel.png"):
 
         mid_angle = start + angle_step / 2
         _draw_slice_label(
-            img, item, center_x, center_y, mid_angle, text_radius, label_font_size, angle_step
+            img,
+            item,
+            center_x,
+            center_y,
+            mid_angle,
+            text_radius,
+            label_font_size,
+            angle_step,
+            radius,
         )
 
     draw.ellipse(

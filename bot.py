@@ -4,12 +4,17 @@ import os
 import random
 import json
 import asyncio
+import time
+from io import BytesIO
 import discord
 from discord.ext import commands
 from dotenv import load_dotenv
 
 from PIL import Image, ImageDraw, ImageFont
 import math
+
+SPIN_DURATION = 5.0
+SPIN_FRAMES = 12
 
 # --------------------
 # ENV
@@ -179,16 +184,8 @@ def _draw_winner_banner(draw, width, height, winner):
     )
 
 
-def _draw_slice_label(
-    img, text, center_x, center_y, mid_angle_deg, text_radius, base_font_size, angle_step, wheel_radius
-):
-    """Bold white label with black outline, rotated to follow the slice radius."""
-    rad = math.radians(mid_angle_deg)
-    x = center_x + math.cos(rad) * text_radius
-    y = center_y + math.sin(rad) * text_radius
-
+def _make_unrotated_label(text, mid_angle_deg, base_font_size, text_radius, angle_step, wheel_radius):
     max_tangential, max_radial = _slice_text_limits(text_radius, angle_step, wheel_radius)
-    # Start smaller for longer strings so we need fewer shrink steps.
     length_factor = max(0.35, min(1.0, 6 / max(len(text), 1)))
     start_size = max(10, int(base_font_size * length_factor))
     font, stroke = _fit_slice_font(text, start_size, max_tangential, max_radial, mid_angle_deg)
@@ -198,8 +195,7 @@ def _draw_slice_label(
     pad = stroke + 6
 
     label = Image.new("RGBA", (bbox[2] - bbox[0] + pad * 2, bbox[3] - bbox[1] + pad * 2), (0, 0, 0, 0))
-    label_draw = ImageDraw.Draw(label)
-    label_draw.text(
+    ImageDraw.Draw(label).text(
         (pad - bbox[0], pad - bbox[1]),
         text,
         font=font,
@@ -207,9 +203,26 @@ def _draw_slice_label(
         stroke_width=stroke,
         stroke_fill="black",
     )
+    return label
 
-    # Rotate so text runs along the slice (vertical at top, horizontal at sides).
-    rotated = label.rotate(-mid_angle_deg, expand=True, resample=Image.Resampling.BICUBIC)
+
+def _build_label_cache(items, text_radius, label_font_size, angle_step, wheel_radius):
+    cache = []
+    n = len(items)
+    for i, item in enumerate(items):
+        mid_angle = -90 + i * (360 / n)
+        cache.append(_make_unrotated_label(
+            item, mid_angle, label_font_size, text_radius, angle_step, wheel_radius
+        ))
+    return cache
+
+
+def _paste_slice_label(img, label, center_x, center_y, mid_angle_deg, text_radius, fast=False):
+    rad = math.radians(mid_angle_deg)
+    x = center_x + math.cos(rad) * text_radius
+    y = center_y + math.sin(rad) * text_radius
+    resample = Image.Resampling.BILINEAR if fast else Image.Resampling.BICUBIC
+    rotated = label.rotate(-mid_angle_deg, expand=True, resample=resample)
     img.paste(
         rotated,
         (int(x - rotated.width / 2), int(y - rotated.height / 2)),
@@ -217,7 +230,7 @@ def _draw_slice_label(
     )
 
 
-def create_wheel_image(items, rotation=0, winner=None, filename="wheel.png"):
+def create_wheel_image(items, rotation=0, winner=None, label_cache=None, fast_resample=False):
     wheel_size = 1000
     banner_h = 130 if winner else 0
     radius = 430
@@ -262,17 +275,15 @@ def create_wheel_image(items, rotation=0, winner=None, filename="wheel.png"):
         )
 
         mid_angle = start + angle_step / 2
-        _draw_slice_label(
-            img,
-            item,
-            center_x,
-            center_y,
-            mid_angle,
-            text_radius,
-            label_font_size,
-            angle_step,
-            radius,
-        )
+        if label_cache is not None:
+            _paste_slice_label(
+                img, label_cache[i], center_x, center_y, mid_angle, text_radius, fast=fast_resample
+            )
+        else:
+            label = _make_unrotated_label(
+                item, mid_angle, label_font_size, text_radius, angle_step, radius
+            )
+            _paste_slice_label(img, label, center_x, center_y, mid_angle, text_radius)
 
     draw.ellipse(
         (center_x - 95, center_y - 95, center_x + 95, center_y + 95),
@@ -303,8 +314,14 @@ def create_wheel_image(items, rotation=0, winner=None, filename="wheel.png"):
         outline="black",
     )
 
-    img.save(filename)
-    return filename
+    return img
+
+
+def _image_to_discord_file(img, filename="wheel.png"):
+    buf = BytesIO()
+    img.save(buf, format="PNG")
+    buf.seek(0)
+    return discord.File(buf, filename=filename)
 
 # --------------------
 # SPIN ANIMATION
@@ -314,37 +331,38 @@ async def spin_animation(interaction, items, winner):
 
     winner_index = items.index(winner)
     angle_step = 360 / len(items)
-
     target_rotation = 360 * 5 - winner_index * angle_step
 
-    frames = 20
+    n = len(items)
+    text_radius = 430 * 0.70
+    label_font_size = max(40, min(78, int(640 / n)))
+    label_cache = _build_label_cache(items, text_radius, label_font_size, angle_step, 430)
 
-    for frame in range(frames):
-        progress = frame / (frames - 1)
+    spin_start = time.monotonic()
+
+    for frame in range(SPIN_FRAMES):
+        progress = frame / (SPIN_FRAMES - 1)
         rotation = target_rotation * (progress ** 0.6)
 
-        img = create_wheel_image(items, rotation=rotation)
-        file = discord.File(img)
+        img = create_wheel_image(items, rotation=rotation, label_cache=label_cache, fast_resample=True)
+        file = _image_to_discord_file(img)
 
         await interaction.edit_original_response(
             content="🎡 Spinning...",
-            attachments=[file]
+            attachments=[file],
         )
 
-        await asyncio.sleep(0.12 + progress * 0.08)
+        target_elapsed = SPIN_DURATION * (frame + 1) / SPIN_FRAMES
+        sleep_for = target_elapsed - (time.monotonic() - spin_start)
+        if sleep_for > 0:
+            await asyncio.sleep(sleep_for)
 
-    img = create_wheel_image(
-        items,
-        rotation=target_rotation,
-        winner=winner,
-        filename="winner.png"
-    )
-
-    file = discord.File(img)
+    img = create_wheel_image(items, rotation=target_rotation, winner=winner)
+    file = _image_to_discord_file(img, filename="winner.png")
 
     await interaction.edit_original_response(
         content=f"🎉 **Result: {winner}!**",
-        attachments=[file]
+        attachments=[file],
     )
 
 # --------------------

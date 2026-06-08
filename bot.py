@@ -1,11 +1,13 @@
 import os
 import random
 import json
+import asyncio
 import discord
 from discord.ext import commands
 from dotenv import load_dotenv
-from http.server import BaseHTTPRequestHandler, HTTPServer
-import threading
+
+import matplotlib.pyplot as plt
+import numpy as np
 
 # --------------------
 # ENV
@@ -17,11 +19,14 @@ if TOKEN is None:
     raise ValueError("Missing DISCORD_TOKEN")
 
 # --------------------
-# DISCORD BOT
+# BOT SETUP
 # --------------------
 intents = discord.Intents.default()
 bot = commands.Bot(command_prefix="!", intents=intents)
 
+# --------------------
+# DATA
+# --------------------
 DATA_FILE = "wheels.json"
 wheels = {}
 
@@ -38,56 +43,108 @@ def save_wheels():
         json.dump(wheels, f, indent=2)
 
 # --------------------
-# PORT FIX (CRITICAL)
+# WHEEL IMAGE GENERATOR
 # --------------------
-def run_web():
-    port = int(os.environ.get("PORT", 10000))
+def create_wheel_image(items, winner, filename="wheel.png"):
+    colors = plt.cm.tab20(np.linspace(0, 1, len(items)))
 
-    class Handler(BaseHTTPRequestHandler):
-        def do_GET(self):
-            self.send_response(200)
-            self.end_headers()
-            self.wfile.write(b"Bot running")
+    explode = [0.1 if item == winner else 0 for item in items]
 
-    server = HTTPServer(("0.0.0.0", port), Handler)
-    server.serve_forever()
+    fig, ax = plt.subplots()
+    ax.pie(
+        [1] * len(items),
+        labels=items,
+        colors=colors,
+        startangle=90,
+        explode=explode
+    )
 
-threading.Thread(target=run_web, daemon=True).start()
+    plt.title("Wheel Result")
+    plt.savefig(filename)
+    plt.close()
+
+    return filename
 
 # --------------------
-# BOT READY
+# READY
 # --------------------
 @bot.event
 async def on_ready():
     print(f"Logged in as {bot.user}")
     load_wheels()
     await bot.tree.sync()
-    print("Synced commands")
+    print("Commands synced")
 
 # --------------------
 # COMMANDS
 # --------------------
+
 @bot.tree.command(name="wheel_create")
 async def wheel_create(interaction: discord.Interaction, name: str):
     if name in wheels:
-        await interaction.response.send_message("Already exists")
+        await interaction.response.send_message("Wheel already exists.")
         return
+
     wheels[name] = []
     save_wheels()
-    await interaction.response.send_message("Created wheel")
+
+    await interaction.response.send_message(f"🎡 Wheel '{name}' created.")
 
 @bot.tree.command(name="wheel_add")
 async def wheel_add(interaction: discord.Interaction, name: str, item: str):
     wheels.setdefault(name, []).append(item)
     save_wheels()
-    await interaction.response.send_message("Added")
 
+    await interaction.response.send_message(f"➕ Added **{item}**")
+
+# --------------------
+# 🎡 SPIN WITH FAKE ANIMATION
+# --------------------
 @bot.tree.command(name="wheel_spin")
 async def wheel_spin(interaction: discord.Interaction, name: str):
     if name not in wheels or not wheels[name]:
         await interaction.response.send_message("Empty wheel")
         return
-    await interaction.response.send_message(random.choice(wheels[name]))
+
+    items = wheels[name]
+    winner = random.choice(items)
+
+    # "animation messages"
+    msg = await interaction.response.send_message("🎡 Spinning wheel...")
+
+    # simulate spinning effect
+    steps = ["🎡 spinning.", "🎡 spinning..", "🎡 spinning...", "🎡 slowing down..."]
+
+    for s in steps:
+        await asyncio.sleep(0.8)
+        await interaction.edit_original_response(content=s)
+
+    # generate image
+    img = create_wheel_image(items, winner)
+    file = discord.File(img)
+
+    await asyncio.sleep(0.5)
+
+    await interaction.edit_original_response(
+        content=f"🎉 Result: **{winner}**",
+        attachments=[file]
+    )
+
+# --------------------
+# RESET
+# --------------------
+@bot.tree.command(name="wheel_reset")
+async def wheel_reset(interaction: discord.Interaction, name: str):
+    wheels[name] = []
+    save_wheels()
+    await interaction.response.send_message("🔄 Wheel reset")
+
+# --------------------
+# HELLO
+# --------------------
+@bot.tree.command(name="hello")
+async def hello(interaction: discord.Interaction):
+    await interaction.response.send_message(f"Hello {interaction.user.mention}")
 
 # --------------------
 # RUN

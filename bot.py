@@ -47,8 +47,51 @@ def save_wheels():
         json.dump(wheels, f, indent=2)
 
 # --------------------
-# 🎡 MODERN WHEEL IMAGE (FIXED TEXT ALIGNMENT)
+# WHEEL IMAGE
 # --------------------
+def _wheel_font(size):
+    for path in (
+        "C:/Windows/Fonts/arialbd.ttf",
+        "C:/Windows/Fonts/arial.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
+        "arial.ttf",
+    ):
+        try:
+            return ImageFont.truetype(path, size)
+        except OSError:
+            continue
+    return ImageFont.load_default()
+
+
+def _draw_slice_label(img, text, center, mid_angle_deg, text_radius, font):
+    """Draw label centered on the slice midline, tangential and readable."""
+    rad = math.radians(mid_angle_deg)
+    x = center + math.cos(rad) * text_radius
+    y = center + math.sin(rad) * text_radius
+
+    measure = ImageDraw.Draw(Image.new("RGBA", (1, 1)))
+    bbox = measure.textbbox((0, 0), text, font=font)
+    tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
+    pad = 8
+
+    label = Image.new("RGBA", (tw + pad * 2, th + pad * 2), (0, 0, 0, 0))
+    label_draw = ImageDraw.Draw(label)
+    label_draw.text((pad - bbox[0], pad - bbox[1]), text, font=font, fill="white")
+
+    # Tangential to the wheel; flip on the bottom so text stays upright.
+    rotation = mid_angle_deg + 90
+    if 90 < mid_angle_deg % 360 < 270:
+        rotation += 180
+
+    rotated = label.rotate(-rotation, expand=True, resample=Image.Resampling.BICUBIC)
+    img.paste(
+        rotated,
+        (int(x - rotated.width / 2), int(y - rotated.height / 2)),
+        rotated,
+    )
+
+
 def create_wheel_image(items, rotation=0, winner=None, filename="wheel.png"):
     size = 1000
     center = size // 2
@@ -57,14 +100,12 @@ def create_wheel_image(items, rotation=0, winner=None, filename="wheel.png"):
     img = Image.new("RGB", (size, size), (255, 230, 240))
     draw = ImageDraw.Draw(img)
 
-    angle_step = 360 / len(items)
+    n = len(items)
+    angle_step = 360 / n
+    font_size = max(28, min(56, int(520 / n)))
+    font = _wheel_font(font_size)
+    center_font = _wheel_font(max(22, font_size - 8))
 
-    try:
-        font = ImageFont.truetype("arial.ttf", 64)  # BIGGER TEXT
-    except:
-        font = ImageFont.load_default()
-
-    # modern colors
     colors = [
         (255, 105, 180),
         (255, 130, 200),
@@ -80,7 +121,6 @@ def create_wheel_image(items, rotation=0, winner=None, filename="wheel.png"):
         if winner and item == winner:
             color = (255, 60, 150)
 
-        # slice
         draw.pieslice(
             (center - radius, center - radius, center + radius, center + radius),
             start=start,
@@ -90,34 +130,8 @@ def create_wheel_image(items, rotation=0, winner=None, filename="wheel.png"):
             width=5,
         )
 
-        # ----------------------------
-        # 📌 TEXT ALIGNMENT (KEY FIX)
-        # ----------------------------
         mid_angle = start + angle_step / 2
-        rad = math.radians(mid_angle)
-
-        # push text further outward (IMPORTANT for readability)
-        text_radius = radius * 0.78
-
-        x = center + math.cos(rad) * text_radius
-        y = center + math.sin(rad) * text_radius
-
-        # rotate text to match slice direction
-        label = Image.new("RGBA", (300, 100), (0, 0, 0, 0))
-        label_draw = ImageDraw.Draw(label)
-
-        # bigger + bold look
-        label_draw.text((10, 10), item, font=font, fill="white")
-
-        # angle so text follows slice direction
-        # +90 makes it readable instead of upside down
-        rotated = label.rotate(mid_angle + 90, expand=True)
-
-        img.paste(
-            rotated,
-            (int(x - rotated.width / 2), int(y - rotated.height / 2)),
-            rotated
-        )
+        _draw_slice_label(img, item, center, mid_angle, radius * 0.62, font)
 
     # --------------------
     # center button (modern)
@@ -133,7 +147,7 @@ def create_wheel_image(items, rotation=0, winner=None, filename="wheel.png"):
         (center - 45, center - 20),
         "SPIN",
         fill="white",
-        font=font,
+        font=center_font,
     )
 
     # pointer

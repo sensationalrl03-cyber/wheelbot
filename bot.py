@@ -145,7 +145,7 @@ img.paste(
     rotated
 )
 
-        )
+        
 
     # center button
     draw.ellipse(

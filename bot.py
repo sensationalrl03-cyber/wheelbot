@@ -64,22 +64,44 @@ def _wheel_font(size):
     return ImageFont.load_default()
 
 
-def _draw_slice_label(img, text, center, mid_angle_deg, text_radius, font):
-    """Draw label centered on the slice midline, tangential and readable."""
+def _fit_slice_font(text, base_size, max_width):
+    """Shrink font until the label fits inside the slice arc."""
+    for size in range(base_size, 20, -2):
+        font = _wheel_font(size)
+        measure = ImageDraw.Draw(Image.new("RGBA", (1, 1)))
+        bbox = measure.textbbox((0, 0), text, font=font)
+        if bbox[2] - bbox[0] <= max_width:
+            return font
+    return _wheel_font(20)
+
+
+def _draw_slice_label(img, text, center, mid_angle_deg, text_radius, base_font_size, angle_step):
+    """Bold white label with black outline, aligned along the slice."""
     rad = math.radians(mid_angle_deg)
     x = center + math.cos(rad) * text_radius
     y = center + math.sin(rad) * text_radius
 
+    arc_width = 2 * text_radius * math.sin(math.radians(angle_step / 2)) * 0.88
+    font = _fit_slice_font(text, base_font_size, arc_width)
+    stroke = max(2, base_font_size // 18)
+
     measure = ImageDraw.Draw(Image.new("RGBA", (1, 1)))
-    bbox = measure.textbbox((0, 0), text, font=font)
+    bbox = measure.textbbox((0, 0), text, font=font, stroke_width=stroke)
     tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
-    pad = 8
+    pad = stroke + 6
 
     label = Image.new("RGBA", (tw + pad * 2, th + pad * 2), (0, 0, 0, 0))
     label_draw = ImageDraw.Draw(label)
-    label_draw.text((pad - bbox[0], pad - bbox[1]), text, font=font, fill="white")
+    label_draw.text(
+        (pad - bbox[0], pad - bbox[1]),
+        text,
+        font=font,
+        fill="white",
+        stroke_width=stroke,
+        stroke_fill="black",
+    )
 
-    # Tangential to the wheel; flip on the bottom so text stays upright.
+    # mid_angle + 90° so text runs along the slice; flip bottom half to stay readable.
     rotation = mid_angle_deg + 90
     if 90 < mid_angle_deg % 360 < 270:
         rotation += 180
@@ -102,9 +124,9 @@ def create_wheel_image(items, rotation=0, winner=None, filename="wheel.png"):
 
     n = len(items)
     angle_step = 360 / n
-    font_size = max(28, min(56, int(520 / n)))
-    font = _wheel_font(font_size)
-    center_font = _wheel_font(max(22, font_size - 8))
+    label_font_size = max(40, min(78, int(640 / n)))
+    center_font = _wheel_font(36)
+    text_radius = radius * 0.70
 
     colors = [
         (255, 105, 180),
@@ -114,7 +136,8 @@ def create_wheel_image(items, rotation=0, winner=None, filename="wheel.png"):
     ]
 
     for i, item in enumerate(items):
-        start = -90 + rotation + i * angle_step
+        # Offset by half a slice so item 0 sits centered under the top pointer.
+        start = -90 - angle_step / 2 + rotation + i * angle_step
         end = start + angle_step
 
         color = colors[i % len(colors)]
@@ -131,7 +154,9 @@ def create_wheel_image(items, rotation=0, winner=None, filename="wheel.png"):
         )
 
         mid_angle = start + angle_step / 2
-        _draw_slice_label(img, item, center, mid_angle, radius * 0.62, font)
+        _draw_slice_label(
+            img, item, center, mid_angle, text_radius, label_font_size, angle_step
+        )
 
     # --------------------
     # center button (modern)
@@ -143,11 +168,16 @@ def create_wheel_image(items, rotation=0, winner=None, filename="wheel.png"):
         width=6,
     )
 
+    spin_bbox = draw.textbbox((0, 0), "SPIN", font=center_font, stroke_width=2)
+    spin_w = spin_bbox[2] - spin_bbox[0]
+    spin_h = spin_bbox[3] - spin_bbox[1]
     draw.text(
-        (center - 45, center - 20),
+        (center - spin_w / 2, center - spin_h / 2),
         "SPIN",
         fill="white",
         font=center_font,
+        stroke_width=2,
+        stroke_fill="black",
     )
 
     # pointer
@@ -173,7 +203,7 @@ async def spin_animation(interaction, items, winner):
     winner_index = items.index(winner)
     angle_step = 360 / len(items)
 
-    target_rotation = 360 * 5 + (270 - ((winner_index + 0.5) * angle_step))
+    target_rotation = 360 * 5 - winner_index * angle_step
 
     frames = 20
 

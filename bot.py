@@ -1,7 +1,6 @@
 import os
 import random
 import json
-import asyncio
 import discord
 from discord.ext import commands
 from dotenv import load_dotenv
@@ -15,7 +14,7 @@ import numpy as np
 load_dotenv()
 TOKEN = os.getenv("DISCORD_TOKEN")
 
-if TOKEN is None:
+if not TOKEN:
     raise ValueError("Missing DISCORD_TOKEN")
 
 # --------------------
@@ -43,11 +42,10 @@ def save_wheels():
         json.dump(wheels, f, indent=2)
 
 # --------------------
-# WHEEL IMAGE GENERATOR
+# WHEEL IMAGE
 # --------------------
 def create_wheel_image(items, winner, filename="wheel.png"):
     colors = plt.cm.tab20(np.linspace(0, 1, len(items)))
-
     explode = [0.1 if item == winner else 0 for item in items]
 
     fig, ax = plt.subplots()
@@ -66,19 +64,18 @@ def create_wheel_image(items, winner, filename="wheel.png"):
     return filename
 
 # --------------------
-# READY
+# READY EVENT
 # --------------------
 @bot.event
 async def on_ready():
-    print(f"Logged in as {bot.user}")
     load_wheels()
     await bot.tree.sync()
+    print(f"Logged in as {bot.user}")
     print("Commands synced")
 
 # --------------------
 # COMMANDS
 # --------------------
-
 @bot.tree.command(name="wheel_create")
 async def wheel_create(interaction: discord.Interaction, name: str):
     if name in wheels:
@@ -98,7 +95,7 @@ async def wheel_add(interaction: discord.Interaction, name: str, item: str):
     await interaction.response.send_message(f"➕ Added **{item}**")
 
 # --------------------
-# 🎡 SPIN WITH FAKE ANIMATION
+# SPIN (WITH IMAGE + SIMPLE ANIMATION)
 # --------------------
 @bot.tree.command(name="wheel_spin")
 async def wheel_spin(interaction: discord.Interaction, name: str):
@@ -109,21 +106,13 @@ async def wheel_spin(interaction: discord.Interaction, name: str):
     items = wheels[name]
     winner = random.choice(items)
 
-    # "animation messages"
-    msg = await interaction.response.send_message("🎡 Spinning wheel...")
+    # quick "spin feel"
+    msg = await interaction.response.send_message("🎡 Spinning...")
 
-    # simulate spinning effect
-    steps = ["🎡 spinning.", "🎡 spinning..", "🎡 spinning...", "🎡 slowing down..."]
+    await discord.utils.sleep_until(discord.utils.utcnow())  # tiny safe yield
 
-    for s in steps:
-        await asyncio.sleep(0.8)
-        await interaction.edit_original_response(content=s)
-
-    # generate image
-    img = create_wheel_image(items, winner)
-    file = discord.File(img)
-
-    await asyncio.sleep(0.5)
+    img_path = create_wheel_image(items, winner)
+    file = discord.File(img_path)
 
     await interaction.edit_original_response(
         content=f"🎉 Result: **{winner}**",
@@ -147,6 +136,6 @@ async def hello(interaction: discord.Interaction):
     await interaction.response.send_message(f"Hello {interaction.user.mention}")
 
 # --------------------
-# RUN
+# RUN BOT (IMPORTANT FOR RENDER)
 # --------------------
 bot.run(TOKEN)

@@ -246,6 +246,26 @@ async def wheel_add(interaction: discord.Interaction, name: str, item: str):
 
     await interaction.response.send_message(f"➕ Added **{item}**")
 
+@bot.tree.command(name="wheel_add_many")
+async def wheel_add_many(
+    interaction: discord.Interaction,
+    name: str,
+    items: str
+):
+    if name not in wheels:
+        await interaction.response.send_message("Wheel not found.")
+        return
+
+    # Split by commas
+    new_items = [item.strip() for item in items.split(",") if item.strip()]
+
+    wheels[name].extend(new_items)
+    save_wheels()
+
+    await interaction.response.send_message(
+        f"➕ Added {len(new_items)} items to **{name}**"
+    )
+
 @bot.tree.command(name="wheel_spin")
 async def wheel_spin(interaction: discord.Interaction, name: str):
     if name not in wheels or not wheels[name]:

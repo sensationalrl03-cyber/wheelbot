@@ -8,23 +8,20 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 import threading
 
 # --------------------
-# LOAD ENV
+# ENV
 # --------------------
 load_dotenv()
 TOKEN = os.getenv("DISCORD_TOKEN")
 
 if TOKEN is None:
-    raise ValueError("DISCORD_TOKEN is missing in environment variables")
+    raise ValueError("Missing DISCORD_TOKEN")
 
 # --------------------
-# DISCORD BOT SETUP
+# DISCORD BOT
 # --------------------
 intents = discord.Intents.default()
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# --------------------
-# DATA STORAGE
-# --------------------
 DATA_FILE = "wheels.json"
 wheels = {}
 
@@ -41,16 +38,18 @@ def save_wheels():
         json.dump(wheels, f, indent=2)
 
 # --------------------
-# SIMPLE WEB SERVER (RENDER PORT FIX)
+# PORT FIX (CRITICAL)
 # --------------------
 def run_web():
+    port = int(os.environ.get("PORT", 10000))
+
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):
             self.send_response(200)
             self.end_headers()
-            self.wfile.write(b"Bot is running")
+            self.wfile.write(b"Bot running")
 
-    server = HTTPServer(("0.0.0.0", 10000), Handler)
+    server = HTTPServer(("0.0.0.0", port), Handler)
     server.serve_forever()
 
 threading.Thread(target=run_web, daemon=True).start()
@@ -61,73 +60,36 @@ threading.Thread(target=run_web, daemon=True).start()
 @bot.event
 async def on_ready():
     print(f"Logged in as {bot.user}")
-
     load_wheels()
-
-    try:
-        synced = await bot.tree.sync()
-        print(f"Synced {len(synced)} command(s)")
-    except Exception as e:
-        print(f"Sync error: {e}")
+    await bot.tree.sync()
+    print("Synced commands")
 
 # --------------------
 # COMMANDS
 # --------------------
-
-@bot.tree.command(name="wheel_create", description="Create a new wheel")
+@bot.tree.command(name="wheel_create")
 async def wheel_create(interaction: discord.Interaction, name: str):
     if name in wheels:
-        await interaction.response.send_message("Wheel already exists.")
+        await interaction.response.send_message("Already exists")
         return
-
     wheels[name] = []
     save_wheels()
+    await interaction.response.send_message("Created wheel")
 
-    await interaction.response.send_message(f"🎡 Wheel '{name}' created.")
-
-@bot.tree.command(name="wheel_add", description="Add item to a wheel")
+@bot.tree.command(name="wheel_add")
 async def wheel_add(interaction: discord.Interaction, name: str, item: str):
-    if name not in wheels:
-        await interaction.response.send_message("Wheel not found.")
-        return
-
-    wheels[name].append(item)
+    wheels.setdefault(name, []).append(item)
     save_wheels()
+    await interaction.response.send_message("Added")
 
-    await interaction.response.send_message(f"➕ Added '{item}' to '{name}'.")
-
-@bot.tree.command(name="wheel_spin", description="Spin a wheel")
-async def wheel_spin(interaction: discord.Interaction, name: str, remove: bool = False):
+@bot.tree.command(name="wheel_spin")
+async def wheel_spin(interaction: discord.Interaction, name: str):
     if name not in wheels or not wheels[name]:
-        await interaction.response.send_message("Wheel is empty or doesn't exist.")
+        await interaction.response.send_message("Empty wheel")
         return
-
-    result = random.choice(wheels[name])
-
-    if remove:
-        wheels[name].remove(result)
-        save_wheels()
-
-    await interaction.response.send_message(f"🎡 You spun: **{result}**")
-
-@bot.tree.command(name="wheel_reset", description="Reset a wheel")
-async def wheel_reset(interaction: discord.Interaction, name: str):
-    if name not in wheels:
-        await interaction.response.send_message("Wheel not found.")
-        return
-
-    wheels[name] = []
-    save_wheels()
-
-    await interaction.response.send_message(f"🔄 Wheel '{name}' reset.")
-
-@bot.tree.command(name="hello", description="Say hello")
-async def hello(interaction: discord.Interaction):
-    await interaction.response.send_message(
-        f"Hello {interaction.user.mention}!"
-    )
+    await interaction.response.send_message(random.choice(wheels[name]))
 
 # --------------------
-# RUN BOT
+# RUN
 # --------------------
 bot.run(TOKEN)

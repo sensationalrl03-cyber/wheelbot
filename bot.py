@@ -47,7 +47,7 @@ def save_wheels():
 # --------------------
 # WHEEL IMAGE
 # --------------------
-def create_wheel_image(items, highlight=None, filename="wheel.png"):
+def create_wheel_image(items, rotation=0, winner=None, filename="wheel.png"):
     size = 1000
 
     bg_color = (255, 230, 240)
@@ -61,22 +61,21 @@ def create_wheel_image(items, highlight=None, filename="wheel.png"):
     center = size // 2
     radius = 430
 
-    n = len(items)
+    angle_per = 360 / len(items)
 
-    if n == 0:
-        return filename
+    try:
+        font = ImageFont.truetype("arial.ttf", 30)
+    except:
+        font = ImageFont.load_default()
 
-    angle_per = 360 / n
-
-    # draw slices
     for i, item in enumerate(items):
-        start = -90 + i * angle_per
+        start = -90 + rotation + (i * angle_per)
         end = start + angle_per
 
         color = dark_pink if i % 2 == 0 else light_pink
 
-        if item == highlight:
-            color = (255, 70, 160)
+        if item == winner:
+            color = (255, 60, 150)
 
         draw.pieslice(
             (
@@ -88,36 +87,16 @@ def create_wheel_image(items, highlight=None, filename="wheel.png"):
             start=start,
             end=end,
             fill=color,
-            outline=(255, 240, 245),
+            outline="white",
             width=4,
         )
 
-    # outer ring
-    draw.ellipse(
-        (
-            center - radius,
-            center - radius,
-            center + radius,
-            center + radius,
-        ),
-        outline=(255, 245, 250),
-        width=12,
-    )
-
-    # font
-    try:
-        font = ImageFont.truetype("arial.ttf", 34)
-    except:
-        font = ImageFont.load_default()
-
-    # labels
-    for i, item in enumerate(items):
-        angle = -90 + (i + 0.5) * angle_per
+        text_angle = math.radians(start + angle_per / 2)
 
         text_radius = radius * 0.72
 
-        x = center + math.cos(math.radians(angle)) * text_radius
-        y = center + math.sin(math.radians(angle)) * text_radius
+        x = center + math.cos(text_angle) * text_radius
+        y = center + math.sin(text_angle) * text_radius
 
         bbox = draw.textbbox((0, 0), item, font=font)
 
@@ -132,50 +111,36 @@ def create_wheel_image(items, highlight=None, filename="wheel.png"):
         )
 
     # center button
-    button_radius = 90
-
     draw.ellipse(
         (
-            center - button_radius,
-            center - button_radius,
-            center + button_radius,
-            center + button_radius,
+            center - 90,
+            center - 90,
+            center + 90,
+            center + 90,
         ),
         fill="black",
         outline="white",
         width=6,
     )
 
-    try:
-        spin_font = ImageFont.truetype("arial.ttf", 42)
-    except:
-        spin_font = ImageFont.load_default()
-
-    spin_text = "Spin"
-
-    bbox = draw.textbbox((0, 0), spin_text, font=spin_font)
-
     draw.text(
-        (
-            center - (bbox[2] - bbox[0]) / 2,
-            center - (bbox[3] - bbox[1]) / 2,
-        ),
-        spin_text,
+        (center - 35, center - 15),
+        "SPIN",
         fill="white",
-        font=spin_font,
+        font=font,
     )
 
-    # top pointer
-    pointer_y = center - radius - 10
+    # POINTER
+    pointer_y = center - radius - 15
 
     draw.polygon(
         [
             (center, pointer_y),
-            (center - 30, pointer_y - 60),
-            (center + 30, pointer_y - 60),
+            (center - 35, pointer_y - 70),
+            (center + 35, pointer_y - 70),
         ],
         fill="white",
-        outline="gray",
+        outline="black",
     )
 
     img.save(filename)
@@ -188,32 +153,50 @@ def create_wheel_image(items, highlight=None, filename="wheel.png"):
 async def spin_animation(interaction, items, winner):
     await interaction.response.send_message("🎡 Spinning wheel...")
 
-    delays = [0.08, 0.12, 0.18, 0.25, 0.35, 0.5, 0.7, 1.0]
+    winner_index = items.index(winner)
 
-    current = random.choice(items)
+    angle_per = 360 / len(items)
 
-    for delay in delays:
-        current = random.choice(items)
+    target_rotation = (
+        360 * 5
+        + (270 - ((winner_index + 0.5) * angle_per))
+    )
 
-        img = create_wheel_image(items, highlight=current, filename="spin.png")
+    frames = 20
+
+    for frame in range(frames):
+        progress = frame / (frames - 1)
+
+        rotation = target_rotation * (progress ** 0.6)
+
+        img = create_wheel_image(
+            items,
+            rotation=rotation,
+            filename="spin.png"
+        )
+
         file = discord.File(img)
 
-        await asyncio.sleep(delay)
-
         await interaction.edit_original_response(
-            content=f"🎡 Spinning... **{current}**",
+            content="🎡 Spinning...",
             attachments=[file]
         )
 
-    # FINAL RESULT
-    img = create_wheel_image(items, highlight=winner, filename="final.png")
+        await asyncio.sleep(0.12 + progress * 0.08)
+
+    img = create_wheel_image(
+        items,
+        rotation=target_rotation,
+        winner=winner,
+        filename="winner.png"
+    )
+
     file = discord.File(img)
 
     await interaction.edit_original_response(
-        content=f"🎉 RESULT: **{winner}**",
+        content=f"🏆 WINNER: **{winner}**",
         attachments=[file]
     )
-
 # --------------------
 # READY
 # --------------------

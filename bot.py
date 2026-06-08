@@ -24,12 +24,12 @@ if not TOKEN:
 # BOT SETUP
 # --------------------
 intents = discord.Intents.default()
-intents.message_content = True  # safer for future features
+intents.message_content = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 # --------------------
-# DATA STORAGE
+# DATA
 # --------------------
 DATA_FILE = "wheels.json"
 wheels = {}
@@ -47,124 +47,104 @@ def save_wheels():
         json.dump(wheels, f, indent=2)
 
 # --------------------
-# FAST WHEEL RENDERER (FIXED)
+# 🎡 MODERN WHEEL IMAGE (FIXED TEXT ALIGNMENT)
 # --------------------
 def create_wheel_image(items, rotation=0, winner=None, filename="wheel.png"):
-    import math
-    from PIL import Image, ImageDraw, ImageFont
-
     size = 1000
     center = size // 2
-    radius = 420
+    radius = 430
 
-    img = Image.new("RGB", (size, size), (18, 18, 28))
+    img = Image.new("RGB", (size, size), (255, 230, 240))
     draw = ImageDraw.Draw(img)
 
     angle_step = 360 / len(items)
 
-    # ---------------- FONT ----------------
     try:
-        font = ImageFont.truetype("arial.ttf", 52)
-        font_small = ImageFont.truetype("arial.ttf", 40)
+        font = ImageFont.truetype("arial.ttf", 64)  # BIGGER TEXT
     except:
         font = ImageFont.load_default()
-        font_small = ImageFont.load_default()
 
-    # ---------------- OUTER GLOW ----------------
-    for r in range(455, 500, 6):
-        draw.ellipse(
-            (center - r, center - r, center + r, center + r),
-            outline=(255, 60, 180)
-        )
+    # modern colors
+    colors = [
+        (255, 105, 180),
+        (255, 130, 200),
+        (255, 160, 210),
+        (255, 120, 190),
+    ]
 
-    # ---------------- WHEEL ----------------
     for i, item in enumerate(items):
-        start = rotation + i * angle_step - 90
+        start = -90 + rotation + i * angle_step
         end = start + angle_step
 
-        color = (255, 50, 170) if i % 2 == 0 else (255, 120, 210)
-
+        color = colors[i % len(colors)]
         if winner and item == winner:
-            color = (255, 230, 120)
+            color = (255, 60, 150)
 
+        # slice
         draw.pieslice(
             (center - radius, center - radius, center + radius, center + radius),
             start=start,
             end=end,
             fill=color,
-            outline=(255, 255, 255),
-            width=4
+            outline="white",
+            width=5,
         )
 
-        # ---------------- TEXT (FIXED ALIGNMENT) ----------------
-        mid = math.radians(start + angle_step / 2)
+        # ----------------------------
+        # 📌 TEXT ALIGNMENT (KEY FIX)
+        # ----------------------------
+        mid_angle = start + angle_step / 2
+        rad = math.radians(mid_angle)
 
-        text_radius = radius * 0.70
-        x = center + math.cos(mid) * text_radius
-        y = center + math.sin(mid) * text_radius
+        # push text further outward (IMPORTANT for readability)
+        text_radius = radius * 0.78
 
-        font_size = max(36, int(900 / len(items)))
+        x = center + math.cos(rad) * text_radius
+        y = center + math.sin(rad) * text_radius
 
-        try:
-            dyn_font = ImageFont.truetype("arial.ttf", font_size)
-        except:
-            dyn_font = ImageFont.load_default()
+        # rotate text to match slice direction
+        label = Image.new("RGBA", (300, 100), (0, 0, 0, 0))
+        label_draw = ImageDraw.Draw(label)
 
-        txt = Image.new("RGBA", (400, 150), (0, 0, 0, 0))
-        tdraw = ImageDraw.Draw(txt)
+        # bigger + bold look
+        label_draw.text((10, 10), item, font=font, fill="white")
 
-        tdraw.text(
-            (200, 75),
-            item,
-            fill="white",
-            anchor="mm",
-            font=dyn_font
-        )
-
-        rotated = txt.rotate(
-            -math.degrees(mid) + 90,
-            resample=Image.BICUBIC,
-            expand=True
-        )
+        # angle so text follows slice direction
+        # +90 makes it readable instead of upside down
+        rotated = label.rotate(mid_angle + 90, expand=True)
 
         img.paste(
             rotated,
-            (int(x - rotated.size[0] / 2), int(y - rotated.size[1] / 2)),
+            (int(x - rotated.width / 2), int(y - rotated.height / 2)),
             rotated
         )
 
-    # ---------------- INNER RING ----------------
+    # --------------------
+    # center button (modern)
+    # --------------------
     draw.ellipse(
-        (center - radius, center - radius, center + radius, center + radius),
-        outline=(255, 255, 255),
-        width=6
-    )
-
-    # ---------------- CENTER BUTTON ----------------
-    draw.ellipse(
-        (center - 85, center - 85, center + 85, center + 85),
-        fill=(10, 10, 15),
-        outline=(255, 255, 255),
-        width=4
+        (center - 95, center - 95, center + 95, center + 95),
+        fill=(20, 20, 20),
+        outline="white",
+        width=6,
     )
 
     draw.text(
-        (center, center),
+        (center - 45, center - 20),
         "SPIN",
         fill="white",
-        anchor="mm",
-        font=font
+        font=font,
     )
 
-    # ---------------- POINTER ----------------
+    # pointer
     draw.polygon(
         [
-            (center, center - radius - 20),
-            (center - 25, center - radius - 75),
-            (center + 25, center - radius - 75),
+            (center, center - radius - 10),
+            (center - 30, center - radius - 70),
+            (center + 30, center - radius - 70),
         ],
         fill="white",
-        outline="black"
+        outline="black",
     )
 
     img.save(filename)
@@ -179,10 +159,7 @@ async def spin_animation(interaction, items, winner):
     winner_index = items.index(winner)
     angle_step = 360 / len(items)
 
-    pointer_angle = 0  # top in math coords
-
-target_rotation = 360 * 5 - (winner_index * angle_step) - (angle_step / 2)
-)
+    target_rotation = 360 * 5 + (270 - ((winner_index + 0.5) * angle_step))
 
     frames = 20
 
@@ -228,20 +205,14 @@ async def on_ready():
 # --------------------
 @bot.tree.command(name="wheel_create")
 async def wheel_create(interaction: discord.Interaction, name: str):
-    if name in wheels:
-        await interaction.response.send_message("Wheel already exists.")
-        return
-
     wheels[name] = []
     save_wheels()
-
     await interaction.response.send_message(f"🎡 Wheel '{name}' created.")
 
 @bot.tree.command(name="wheel_add")
 async def wheel_add(interaction: discord.Interaction, name: str, item: str):
     wheels.setdefault(name, []).append(item)
     save_wheels()
-
     await interaction.response.send_message(f"➕ Added **{item}**")
 
 @bot.tree.command(name="wheel_add_many")
@@ -271,7 +242,6 @@ async def wheel_spin(interaction: discord.Interaction, name: str):
 async def wheel_reset(interaction: discord.Interaction, name: str):
     wheels[name] = []
     save_wheels()
-
     await interaction.response.send_message("🔄 Wheel reset")
 
 @bot.tree.command(name="hello")
@@ -279,7 +249,7 @@ async def hello(interaction: discord.Interaction):
     await interaction.response.send_message(f"Hello {interaction.user.mention}")
 
 # --------------------
-# FLASK + BOT
+# FLASK KEEPALIVE
 # --------------------
 app = Flask(__name__)
 

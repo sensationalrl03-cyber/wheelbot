@@ -64,7 +64,7 @@ def create_wheel_image(items, rotation=0, winner=None, filename="wheel.png"):
     angle_per = 360 / len(items)
 
     try:
-        font = ImageFont.truetype("arial.ttf", 30)
+        font = ImageFont.truetype("arial.ttf", 52)
     except:
         font = ImageFont.load_default()
 
@@ -91,23 +91,60 @@ def create_wheel_image(items, rotation=0, winner=None, filename="wheel.png"):
             width=4,
         )
 
-        text_angle = math.radians(start + angle_per / 2)
+        label_angle = start + angle_per / 2
 
-        text_radius = radius * 0.72
+text_radius = radius * 0.72
 
-        x = center + math.cos(text_angle) * text_radius
-        y = center + math.sin(text_angle) * text_radius
+x = center + math.cos(math.radians(label_angle)) * text_radius
+y = center + math.sin(math.radians(label_angle)) * text_radius
 
-        bbox = draw.textbbox((0, 0), item, font=font)
+bbox = draw.textbbox((0, 0), item, font=font)
 
-        w = bbox[2] - bbox[0]
-        h = bbox[3] - bbox[1]
+tw = bbox[2] - bbox[0]
+th = bbox[3] - bbox[1]
 
-        draw.text(
-            (x - w / 2, y - h / 2),
-            item,
-            fill="black",
-            font=font,
+label_img = Image.new(
+    "RGBA",
+    (tw + 40, th + 40),
+    (0, 0, 0, 0)
+)
+
+label_draw = ImageDraw.Draw(label_img)
+
+# black outline
+for ox in (-2, -1, 0, 1, 2):
+    for oy in (-2, -1, 0, 1, 2):
+        if ox != 0 or oy != 0:
+            label_draw.text(
+                (20 + ox, 20 + oy),
+                item,
+                font=font,
+                fill="black"
+            )
+
+# white text
+label_draw.text(
+    (20, 20),
+    item,
+    font=font,
+    fill="white"
+)
+
+rotated = label_img.rotate(
+    label_angle + 90,
+    expand=True,
+    resample=Image.BICUBIC
+)
+
+img.paste(
+    rotated,
+    (
+        int(x - rotated.width / 2),
+        int(y - rotated.height / 2)
+    ),
+    rotated
+)
+
         )
 
     # center button

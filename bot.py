@@ -75,22 +75,91 @@ def _fit_slice_font(text, base_size, max_width):
     return _wheel_font(20)
 
 
-def _draw_slice_label(img, text, center, mid_angle_deg, text_radius, base_font_size, angle_step):
-    """Bold white label with black outline, aligned along the slice."""
-    rad = math.radians(mid_angle_deg)
-    x = center + math.cos(rad) * text_radius
-    y = center + math.sin(rad) * text_radius
+def _draw_winner_banner(draw, width, height, winner):
+    font = _wheel_font(46)
+    stroke = 3
+    prefix, suffix = "Result: ", "!"
+    full = f"{prefix}{winner}{suffix}"
 
-    arc_width = 2 * text_radius * math.sin(math.radians(angle_step / 2)) * 0.88
+    full_bbox = draw.textbbox((0, 0), full, font=font, stroke_width=stroke)
+    prefix_bbox = draw.textbbox((0, 0), prefix, font=font, stroke_width=stroke)
+    winner_bbox = draw.textbbox((0, 0), winner, font=font, stroke_width=stroke)
+    full_w = full_bbox[2] - full_bbox[0]
+    full_h = full_bbox[3] - full_bbox[1]
+    pad_x, pad_y = 30, 16
+    box_w = full_w + pad_x * 2
+    box_h = full_h + pad_y * 2
+    box_x = (width - box_w) / 2
+    box_y = (height - box_h) / 2
+
+    draw.rounded_rectangle(
+        (box_x, box_y, box_x + box_w, box_y + box_h),
+        radius=18,
+        fill=(30, 30, 30),
+        outline="white",
+        width=4,
+    )
+
+    text_x = box_x + pad_x - full_bbox[0]
+    text_y = box_y + pad_y - full_bbox[1]
+    draw.text(
+        (text_x, text_y),
+        prefix,
+        font=font,
+        fill="white",
+        stroke_width=stroke,
+        stroke_fill="black",
+    )
+
+    winner_x = text_x + prefix_bbox[2] - prefix_bbox[0]
+    winner_w = winner_bbox[2] - winner_bbox[0]
+    winner_h = winner_bbox[3] - winner_bbox[1]
+    highlight_pad = 8
+    draw.rounded_rectangle(
+        (
+            winner_x - highlight_pad,
+            text_y + winner_bbox[1] - highlight_pad,
+            winner_x + winner_w + highlight_pad,
+            text_y + winner_bbox[3] + highlight_pad,
+        ),
+        radius=10,
+        fill=(255, 60, 150),
+    )
+    draw.text(
+        (winner_x, text_y),
+        winner,
+        font=font,
+        fill="white",
+        stroke_width=stroke,
+        stroke_fill="black",
+    )
+
+    suffix_x = winner_x + winner_w
+    draw.text(
+        (suffix_x, text_y),
+        suffix,
+        font=font,
+        fill="white",
+        stroke_width=stroke,
+        stroke_fill="black",
+    )
+
+
+def _draw_slice_label(img, text, center_x, center_y, mid_angle_deg, text_radius, base_font_size, angle_step):
+    """Bold white label with black outline, rotated to follow the slice radius."""
+    rad = math.radians(mid_angle_deg)
+    x = center_x + math.cos(rad) * text_radius
+    y = center_y + math.sin(rad) * text_radius
+
+    arc_width = 2 * text_radius * math.sin(math.radians(angle_step / 2)) * 0.90
     font = _fit_slice_font(text, base_font_size, arc_width)
     stroke = max(2, base_font_size // 18)
 
     measure = ImageDraw.Draw(Image.new("RGBA", (1, 1)))
     bbox = measure.textbbox((0, 0), text, font=font, stroke_width=stroke)
-    tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
     pad = stroke + 6
 
-    label = Image.new("RGBA", (tw + pad * 2, th + pad * 2), (0, 0, 0, 0))
+    label = Image.new("RGBA", (bbox[2] - bbox[0] + pad * 2, bbox[3] - bbox[1] + pad * 2), (0, 0, 0, 0))
     label_draw = ImageDraw.Draw(label)
     label_draw.text(
         (pad - bbox[0], pad - bbox[1]),
@@ -101,12 +170,8 @@ def _draw_slice_label(img, text, center, mid_angle_deg, text_radius, base_font_s
         stroke_fill="black",
     )
 
-    # mid_angle + 90° so text runs along the slice; flip bottom half to stay readable.
-    rotation = mid_angle_deg + 90
-    if 90 < mid_angle_deg % 360 < 270:
-        rotation += 180
-
-    rotated = label.rotate(-rotation, expand=True, resample=Image.Resampling.BICUBIC)
+    # Rotate so text runs along the slice (vertical at top, horizontal at sides).
+    rotated = label.rotate(-mid_angle_deg, expand=True, resample=Image.Resampling.BICUBIC)
     img.paste(
         rotated,
         (int(x - rotated.width / 2), int(y - rotated.height / 2)),
@@ -115,12 +180,17 @@ def _draw_slice_label(img, text, center, mid_angle_deg, text_radius, base_font_s
 
 
 def create_wheel_image(items, rotation=0, winner=None, filename="wheel.png"):
-    size = 1000
-    center = size // 2
+    wheel_size = 1000
+    banner_h = 130 if winner else 0
     radius = 430
+    center_x = wheel_size // 2
+    center_y = banner_h + wheel_size // 2
 
-    img = Image.new("RGB", (size, size), (255, 230, 240))
+    img = Image.new("RGB", (wheel_size, wheel_size + banner_h), (255, 230, 240))
     draw = ImageDraw.Draw(img)
+
+    if winner:
+        _draw_winner_banner(draw, wheel_size, banner_h, winner)
 
     n = len(items)
     angle_step = 360 / n
@@ -145,7 +215,7 @@ def create_wheel_image(items, rotation=0, winner=None, filename="wheel.png"):
             color = (255, 60, 150)
 
         draw.pieslice(
-            (center - radius, center - radius, center + radius, center + radius),
+            (center_x - radius, center_y - radius, center_x + radius, center_y + radius),
             start=start,
             end=end,
             fill=color,
@@ -155,14 +225,11 @@ def create_wheel_image(items, rotation=0, winner=None, filename="wheel.png"):
 
         mid_angle = start + angle_step / 2
         _draw_slice_label(
-            img, item, center, mid_angle, text_radius, label_font_size, angle_step
+            img, item, center_x, center_y, mid_angle, text_radius, label_font_size, angle_step
         )
 
-    # --------------------
-    # center button (modern)
-    # --------------------
     draw.ellipse(
-        (center - 95, center - 95, center + 95, center + 95),
+        (center_x - 95, center_y - 95, center_x + 95, center_y + 95),
         fill=(20, 20, 20),
         outline="white",
         width=6,
@@ -172,7 +239,7 @@ def create_wheel_image(items, rotation=0, winner=None, filename="wheel.png"):
     spin_w = spin_bbox[2] - spin_bbox[0]
     spin_h = spin_bbox[3] - spin_bbox[1]
     draw.text(
-        (center - spin_w / 2, center - spin_h / 2),
+        (center_x - spin_w / 2, center_y - spin_h / 2),
         "SPIN",
         fill="white",
         font=center_font,
@@ -180,12 +247,11 @@ def create_wheel_image(items, rotation=0, winner=None, filename="wheel.png"):
         stroke_fill="black",
     )
 
-    # pointer
     draw.polygon(
         [
-            (center, center - radius - 10),
-            (center - 30, center - radius - 70),
-            (center + 30, center - radius - 70),
+            (center_x, center_y - radius - 10),
+            (center_x - 30, center_y - radius - 70),
+            (center_x + 30, center_y - radius - 70),
         ],
         fill="white",
         outline="black",
@@ -231,7 +297,7 @@ async def spin_animation(interaction, items, winner):
     file = discord.File(img)
 
     await interaction.edit_original_response(
-        content=f"🏆 WINNER: **{winner}**",
+        content=f"🎉 **Result: {winner}!**",
         attachments=[file]
     )
 

@@ -50,108 +50,102 @@ def save_wheels():
 # FAST WHEEL RENDERER (FIXED)
 # --------------------
 def create_wheel_image(items, rotation=0, winner=None, filename="wheel.png"):
+    import math
+    from PIL import Image, ImageDraw, ImageFont
+
     size = 1000
     center = size // 2
     radius = 420
 
-    img = Image.new("RGB", (size, size), (20, 20, 30))
+    img = Image.new("RGB", (size, size), (18, 18, 28))
     draw = ImageDraw.Draw(img)
 
     angle_step = 360 / len(items)
 
-    # ---------- FONT ----------
+    # ---------------- FONT ----------------
     try:
-        font = ImageFont.truetype("arial.ttf", 44)
-        font_small = ImageFont.truetype("arial.ttf", 34)
+        font = ImageFont.truetype("arial.ttf", 52)
+        font_small = ImageFont.truetype("arial.ttf", 40)
     except:
         font = ImageFont.load_default()
         font_small = ImageFont.load_default()
 
-    # ---------- NEON OUTER GLOW ----------
-    for r in range(460, 500, 6):
-        alpha_color = (255, 60, 180)
+    # ---------------- OUTER GLOW ----------------
+    for r in range(455, 500, 6):
         draw.ellipse(
             (center - r, center - r, center + r, center + r),
-            outline=alpha_color
+            outline=(255, 60, 180)
         )
 
-    # ---------- WHEEL SEGMENTS ----------
+    # ---------------- WHEEL ----------------
     for i, item in enumerate(items):
-        start = -90 + rotation + i * angle_step
+        start = rotation + i * angle_step - 90
         end = start + angle_step
 
-        # neon alternating colors
-        base = (255, 40, 160) if i % 2 == 0 else (255, 120, 200)
+        color = (255, 50, 170) if i % 2 == 0 else (255, 120, 210)
 
         if winner and item == winner:
-            base = (255, 230, 120)  # highlight winner
+            color = (255, 230, 120)
 
         draw.pieslice(
             (center - radius, center - radius, center + radius, center + radius),
             start=start,
             end=end,
-            fill=base,
+            fill=color,
             outline=(255, 255, 255),
             width=4
         )
 
-       # ---------- LABEL (FIXED ALIGNMENT + BIGGER TEXT) ----------
-mid_angle = math.radians(start + angle_step / 2)
+        # ---------------- TEXT (FIXED ALIGNMENT) ----------------
+        mid = math.radians(start + angle_step / 2)
 
-text_radius = radius * 0.72
+        text_radius = radius * 0.70
+        x = center + math.cos(mid) * text_radius
+        y = center + math.sin(mid) * text_radius
 
-x = center + math.cos(mid_angle) * text_radius
-y = center + math.sin(mid_angle) * text_radius
+        font_size = max(36, int(900 / len(items)))
 
-# scale font slightly based on slice size (better readability)
-font_size = max(34, int(900 / len(items)))
-try:
-    font_dynamic = ImageFont.truetype("arial.ttf", font_size)
-except:
-    font_dynamic = ImageFont.load_default()
+        try:
+            dyn_font = ImageFont.truetype("arial.ttf", font_size)
+        except:
+            dyn_font = ImageFont.load_default()
 
-txt = Image.new("RGBA", (400, 150), (0, 0, 0, 0))
-tdraw = ImageDraw.Draw(txt)
+        txt = Image.new("RGBA", (400, 150), (0, 0, 0, 0))
+        tdraw = ImageDraw.Draw(txt)
 
-tdraw.text(
-    (200, 75),
-    item,
-    fill="white",
-    anchor="mm",
-    font=font_dynamic
-)
+        tdraw.text(
+            (200, 75),
+            item,
+            fill="white",
+            anchor="mm",
+            font=dyn_font
+        )
 
-# IMPORTANT: correct rotation direction fix
-rotated = txt.rotate(
-    -math.degrees(mid_angle) + 90,
-    resample=Image.BICUBIC,
-    expand=True
-)
+        rotated = txt.rotate(
+            -math.degrees(mid) + 90,
+            resample=Image.BICUBIC,
+            expand=True
+        )
 
-img.paste(
-    rotated,
-    (int(x - rotated.size[0] / 2), int(y - rotated.size[1] / 2)),
-    rotated
-)
+        img.paste(
+            rotated,
+            (int(x - rotated.size[0] / 2), int(y - rotated.size[1] / 2)),
+            rotated
+        )
 
-    # ---------- INNER RING ----------
+    # ---------------- INNER RING ----------------
     draw.ellipse(
         (center - radius, center - radius, center + radius, center + radius),
         outline=(255, 255, 255),
         width=6
     )
 
-    # ---------- CENTER BUTTON (GLOSSY STYLE) ----------
-    for r in range(90, 60, -4):
-        draw.ellipse(
-            (center - r, center - r, center + r, center + r),
-            fill=(10, 10, 15)
-        )
-
+    # ---------------- CENTER BUTTON ----------------
     draw.ellipse(
-        (center - 70, center - 70, center + 70, center + 70),
+        (center - 85, center - 85, center + 85, center + 85),
+        fill=(10, 10, 15),
         outline=(255, 255, 255),
-        width=3
+        width=4
     )
 
     draw.text(
@@ -162,14 +156,15 @@ img.paste(
         font=font
     )
 
-    # ---------- POINTER ----------
+    # ---------------- POINTER ----------------
     draw.polygon(
         [
             (center, center - radius - 20),
-            (center - 25, center - radius - 70),
-            (center + 25, center - radius - 70),
+            (center - 25, center - radius - 75),
+            (center + 25, center - radius - 75),
         ],
-        fill="white"
+        fill="white",
+        outline="black"
     )
 
     img.save(filename)
@@ -186,10 +181,7 @@ async def spin_animation(interaction, items, winner):
 
     pointer_angle = 0  # top in math coords
 
-target_rotation = (
-    360 * 5
-    - (winner_index * angle_step)
-    - (angle_step / 2)
+target_rotation = 360 * 5 - (winner_index * angle_step) - (angle_step / 2)
 )
 
     frames = 20

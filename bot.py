@@ -6,8 +6,8 @@ import discord
 from discord.ext import commands
 from dotenv import load_dotenv
 
-import matplotlib.pyplot as plt
-import numpy as np
+from PIL import Image, ImageDraw, ImageFont
+import math
 
 # --------------------
 # ENV
@@ -46,23 +46,137 @@ def save_wheels():
 # WHEEL IMAGE
 # --------------------
 def create_wheel_image(items, highlight=None, filename="wheel.png"):
-    colors = plt.cm.tab20(np.linspace(0, 1, len(items)))
+    size = 1000
 
-    explode = [0.12 if item == highlight else 0 for item in items]
+    bg_color = (255, 230, 240)
 
-    fig, ax = plt.subplots()
+    dark_pink = (255, 105, 180)
+    light_pink = (255, 182, 193)
 
-    ax.pie(
-        [1] * len(items),
-        labels=items,
-        colors=colors,
-        startangle=90,
-        explode=explode
+    img = Image.new("RGB", (size, size), bg_color)
+    draw = ImageDraw.Draw(img)
+
+    center = size // 2
+    radius = 430
+
+    n = len(items)
+
+    if n == 0:
+        return filename
+
+    angle_per = 360 / n
+
+    # draw slices
+    for i, item in enumerate(items):
+        start = -90 + i * angle_per
+        end = start + angle_per
+
+        color = dark_pink if i % 2 == 0 else light_pink
+
+        if item == highlight:
+            color = (255, 70, 160)
+
+        draw.pieslice(
+            (
+                center - radius,
+                center - radius,
+                center + radius,
+                center + radius,
+            ),
+            start=start,
+            end=end,
+            fill=color,
+            outline=(255, 240, 245),
+            width=4,
+        )
+
+    # outer ring
+    draw.ellipse(
+        (
+            center - radius,
+            center - radius,
+            center + radius,
+            center + radius,
+        ),
+        outline=(255, 245, 250),
+        width=12,
     )
 
-    plt.title("🎡 Wheel")
-    plt.savefig(filename)
-    plt.close()
+    # font
+    try:
+        font = ImageFont.truetype("arial.ttf", 34)
+    except:
+        font = ImageFont.load_default()
+
+    # labels
+    for i, item in enumerate(items):
+        angle = -90 + (i + 0.5) * angle_per
+
+        text_radius = radius * 0.72
+
+        x = center + math.cos(math.radians(angle)) * text_radius
+        y = center + math.sin(math.radians(angle)) * text_radius
+
+        bbox = draw.textbbox((0, 0), item, font=font)
+
+        w = bbox[2] - bbox[0]
+        h = bbox[3] - bbox[1]
+
+        draw.text(
+            (x - w / 2, y - h / 2),
+            item,
+            fill="black",
+            font=font,
+        )
+
+    # center button
+    button_radius = 90
+
+    draw.ellipse(
+        (
+            center - button_radius,
+            center - button_radius,
+            center + button_radius,
+            center + button_radius,
+        ),
+        fill="black",
+        outline="white",
+        width=6,
+    )
+
+    try:
+        spin_font = ImageFont.truetype("arial.ttf", 42)
+    except:
+        spin_font = ImageFont.load_default()
+
+    spin_text = "Spin"
+
+    bbox = draw.textbbox((0, 0), spin_text, font=spin_font)
+
+    draw.text(
+        (
+            center - (bbox[2] - bbox[0]) / 2,
+            center - (bbox[3] - bbox[1]) / 2,
+        ),
+        spin_text,
+        fill="white",
+        font=spin_font,
+    )
+
+    # top pointer
+    pointer_y = center - radius - 10
+
+    draw.polygon(
+        [
+            (center, pointer_y),
+            (center - 30, pointer_y - 60),
+            (center + 30, pointer_y - 60),
+        ],
+        fill="white",
+        outline="gray",
+    )
+
+    img.save(filename)
 
     return filename
 

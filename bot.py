@@ -95,30 +95,44 @@ def create_wheel_image(items, rotation=0, winner=None, filename="wheel.png"):
             width=4
         )
 
-        # ---------- LABEL (ROTATED PROPERLY) ----------
-        mid = math.radians(start + angle_step / 2)
+       # ---------- LABEL (FIXED ALIGNMENT + BIGGER TEXT) ----------
+mid_angle = math.radians(start + angle_step / 2)
 
-        text_r = radius * 0.68
-        x = center + math.cos(mid) * text_r
-        y = center + math.sin(mid) * text_r
+text_radius = radius * 0.72
 
-        # create rotated text image (IMPORTANT PART)
-        txt = Image.new("RGBA", (300, 100), (0, 0, 0, 0))
-        tdraw = ImageDraw.Draw(txt)
+x = center + math.cos(mid_angle) * text_radius
+y = center + math.sin(mid_angle) * text_radius
 
-        tdraw.text((150, 50), item, fill="white", anchor="mm", font=font_small)
+# scale font slightly based on slice size (better readability)
+font_size = max(34, int(900 / len(items)))
+try:
+    font_dynamic = ImageFont.truetype("arial.ttf", font_size)
+except:
+    font_dynamic = ImageFont.load_default()
 
-        rotated = txt.rotate(
-            -math.degrees(mid) + 90,
-            resample=Image.BICUBIC,
-            expand=True
-        )
+txt = Image.new("RGBA", (400, 150), (0, 0, 0, 0))
+tdraw = ImageDraw.Draw(txt)
 
-        img.paste(
-            rotated,
-            (int(x - rotated.size[0] / 2), int(y - rotated.size[1] / 2)),
-            rotated
-        )
+tdraw.text(
+    (200, 75),
+    item,
+    fill="white",
+    anchor="mm",
+    font=font_dynamic
+)
+
+# IMPORTANT: correct rotation direction fix
+rotated = txt.rotate(
+    -math.degrees(mid_angle) + 90,
+    resample=Image.BICUBIC,
+    expand=True
+)
+
+img.paste(
+    rotated,
+    (int(x - rotated.size[0] / 2), int(y - rotated.size[1] / 2)),
+    rotated
+)
 
     # ---------- INNER RING ----------
     draw.ellipse(
@@ -170,7 +184,13 @@ async def spin_animation(interaction, items, winner):
     winner_index = items.index(winner)
     angle_step = 360 / len(items)
 
-    target_rotation = 360 * 5 + (270 - ((winner_index + 0.5) * angle_step))
+    pointer_angle = 0  # top in math coords
+
+target_rotation = (
+    360 * 5
+    - (winner_index * angle_step)
+    - (angle_step / 2)
+)
 
     frames = 20
 

@@ -52,78 +52,110 @@ def save_wheels():
 def create_wheel_image(items, rotation=0, winner=None, filename="wheel.png"):
     size = 1000
     center = size // 2
-    radius = 430
+    radius = 420
 
-    img = Image.new("RGB", (size, size), (255, 230, 240))
+    img = Image.new("RGB", (size, size), (20, 20, 30))
     draw = ImageDraw.Draw(img)
 
     angle_step = 360 / len(items)
 
+    # ---------- FONT ----------
     try:
-        font = ImageFont.truetype("arial.ttf", 42)
+        font = ImageFont.truetype("arial.ttf", 44)
+        font_small = ImageFont.truetype("arial.ttf", 34)
     except:
         font = ImageFont.load_default()
+        font_small = ImageFont.load_default()
 
+    # ---------- NEON OUTER GLOW ----------
+    for r in range(460, 500, 6):
+        alpha_color = (255, 60, 180)
+        draw.ellipse(
+            (center - r, center - r, center + r, center + r),
+            outline=alpha_color
+        )
+
+    # ---------- WHEEL SEGMENTS ----------
     for i, item in enumerate(items):
         start = -90 + rotation + i * angle_step
         end = start + angle_step
 
-        color = (255, 105, 180) if i % 2 == 0 else (255, 182, 193)
-        if winner and item == winner:
-            color = (255, 60, 150)
+        # neon alternating colors
+        base = (255, 40, 160) if i % 2 == 0 else (255, 120, 200)
 
-        # slice
+        if winner and item == winner:
+            base = (255, 230, 120)  # highlight winner
+
         draw.pieslice(
             (center - radius, center - radius, center + radius, center + radius),
             start=start,
             end=end,
-            fill=color,
-            outline="white",
-            width=3,
+            fill=base,
+            outline=(255, 255, 255),
+            width=4
         )
 
-        # label position
-        mid_angle = math.radians(start + angle_step / 2)
-        text_radius = radius * 0.72
+        # ---------- LABEL (ROTATED PROPERLY) ----------
+        mid = math.radians(start + angle_step / 2)
 
-        x = center + math.cos(mid_angle) * text_radius
-        y = center + math.sin(mid_angle) * text_radius
+        text_r = radius * 0.68
+        x = center + math.cos(mid) * text_r
+        y = center + math.sin(mid) * text_r
 
-        # text size
-        bbox = draw.textbbox((0, 0), item, font=font)
-        w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
+        # create rotated text image (IMPORTANT PART)
+        txt = Image.new("RGBA", (300, 100), (0, 0, 0, 0))
+        tdraw = ImageDraw.Draw(txt)
 
-        draw.text(
-            (x - w / 2, y - h / 2),
-            item,
-            fill="black",
-            font=font
+        tdraw.text((150, 50), item, fill="white", anchor="mm", font=font_small)
+
+        rotated = txt.rotate(
+            -math.degrees(mid) + 90,
+            resample=Image.BICUBIC,
+            expand=True
         )
 
-    # center button
+        img.paste(
+            rotated,
+            (int(x - rotated.size[0] / 2), int(y - rotated.size[1] / 2)),
+            rotated
+        )
+
+    # ---------- INNER RING ----------
     draw.ellipse(
-        (center - 90, center - 90, center + 90, center + 90),
-        fill="black",
-        outline="white",
-        width=5,
+        (center - radius, center - radius, center + radius, center + radius),
+        outline=(255, 255, 255),
+        width=6
+    )
+
+    # ---------- CENTER BUTTON (GLOSSY STYLE) ----------
+    for r in range(90, 60, -4):
+        draw.ellipse(
+            (center - r, center - r, center + r, center + r),
+            fill=(10, 10, 15)
+        )
+
+    draw.ellipse(
+        (center - 70, center - 70, center + 70, center + 70),
+        outline=(255, 255, 255),
+        width=3
     )
 
     draw.text(
-        (center - 35, center - 15),
+        (center, center),
         "SPIN",
         fill="white",
-        font=font,
+        anchor="mm",
+        font=font
     )
 
-    # pointer
+    # ---------- POINTER ----------
     draw.polygon(
         [
-            (center, center - radius - 10),
-            (center - 30, center - radius - 70),
-            (center + 30, center - radius - 70),
+            (center, center - radius - 20),
+            (center - 25, center - radius - 70),
+            (center + 25, center - radius - 70),
         ],
-        fill="white",
-        outline="black",
+        fill="white"
     )
 
     img.save(filename)

@@ -5,10 +5,15 @@ import random
 import json
 import asyncio
 import time
+import logging
+import traceback
 from io import BytesIO
 import discord
 from discord.ext import commands
 from dotenv import load_dotenv
+
+logging.basicConfig(level=logging.INFO)
+log = logging.getLogger("wheelbot")
 
 from PIL import Image, ImageDraw, ImageFont
 import math
@@ -329,41 +334,48 @@ def _image_to_discord_file(img, filename="wheel.png"):
 async def spin_animation(interaction, items, winner):
     await interaction.response.send_message("🎡 Spinning wheel...")
 
-    winner_index = items.index(winner)
-    angle_step = 360 / len(items)
-    target_rotation = 360 * 5 - winner_index * angle_step
+    try:
+        winner_index = items.index(winner)
+        angle_step = 360 / len(items)
+        target_rotation = 360 * 5 - winner_index * angle_step
 
-    n = len(items)
-    text_radius = 430 * 0.70
-    label_font_size = max(40, min(78, int(640 / n)))
-    label_cache = _build_label_cache(items, text_radius, label_font_size, angle_step, 430)
+        n = len(items)
+        text_radius = 430 * 0.70
+        label_font_size = max(40, min(78, int(640 / n)))
+        label_cache = _build_label_cache(items, text_radius, label_font_size, angle_step, 430)
 
-    spin_start = time.monotonic()
+        spin_start = time.monotonic()
 
-    for frame in range(SPIN_FRAMES):
-        progress = frame / (SPIN_FRAMES - 1)
-        rotation = target_rotation * (progress ** 0.6)
+        for frame in range(SPIN_FRAMES):
+            progress = frame / (SPIN_FRAMES - 1)
+            rotation = target_rotation * (progress ** 0.6)
 
-        img = create_wheel_image(items, rotation=rotation, label_cache=label_cache, fast_resample=True)
-        file = _image_to_discord_file(img)
+            img = create_wheel_image(items, rotation=rotation, label_cache=label_cache, fast_resample=True)
+            file = _image_to_discord_file(img)
+
+            await interaction.edit_original_response(
+                content="🎡 Spinning...",
+                attachments=[file],
+            )
+
+            target_elapsed = SPIN_DURATION * (frame + 1) / SPIN_FRAMES
+            sleep_for = target_elapsed - (time.monotonic() - spin_start)
+            if sleep_for > 0:
+                await asyncio.sleep(sleep_for)
+
+        img = create_wheel_image(items, rotation=target_rotation, winner=winner)
+        file = _image_to_discord_file(img, filename="winner.png")
 
         await interaction.edit_original_response(
-            content="🎡 Spinning...",
+            content=f"🎉 **Result: {winner}!**",
             attachments=[file],
         )
-
-        target_elapsed = SPIN_DURATION * (frame + 1) / SPIN_FRAMES
-        sleep_for = target_elapsed - (time.monotonic() - spin_start)
-        if sleep_for > 0:
-            await asyncio.sleep(sleep_for)
-
-    img = create_wheel_image(items, rotation=target_rotation, winner=winner)
-    file = _image_to_discord_file(img, filename="winner.png")
-
-    await interaction.edit_original_response(
-        content=f"🎉 **Result: {winner}!**",
-        attachments=[file],
-    )
+    except Exception:
+        log.exception("Spin failed")
+        try:
+            await interaction.edit_original_response(content="❌ Spin failed. Please try again.")
+        except discord.HTTPException:
+            pass
 
 # --------------------
 # EVENTS
@@ -371,8 +383,17 @@ async def spin_animation(interaction, items, winner):
 @bot.event
 async def on_ready():
     load_wheels()
-    await bot.tree.sync()
-    print(f"Logged in as {bot.user}")
+    try:
+        synced = await bot.tree.sync()
+        log.info("Synced %s command(s)", len(synced))
+    except Exception:
+        log.exception("Command sync failed")
+    log.info("Logged in as %s (id=%s)", bot.user, bot.user.id)
+
+
+@bot.event
+async def on_error(event, *args, **kwargs):
+    log.exception("Discord event error in %s", event)
 
 # --------------------
 # COMMANDS
@@ -423,18 +444,36 @@ async def hello(interaction: discord.Interaction):
     await interaction.response.send_message(f"Hello {interaction.user.mention}")
 
 # --------------------
-# FLASK KEEPALIVE
+# FLASK KEEPALIVE (main thread — required for Render)
 # --------------------
 app = Flask(__name__)
+
 
 @app.route("/")
 def home():
     return "Bot is running"
 
-def run_web():
+
+@app.route("/health")
+def health():
+    return {"status": "ok", "discord": str(bot.user) if bot.user else "connecting"}
+
+
+def run_bot():
+    try:
+        log.info("Starting Discord bot...")
+        bot.run(TOKEN, log_handler=None)
+    except Exception:
+        log.exception("Discord bot crashed")
+        raise
+
+
+def main():
+    threading.Thread(target=run_bot, daemon=True).start()
     port = int(os.environ.get("PORT", 10000))
+    log.info("Starting web server on port %s", port)
     app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)
 
-threading.Thread(target=run_web, daemon=True).start()
 
-bot.run(TOKEN)
+if __name__ == "__main__":
+    main()

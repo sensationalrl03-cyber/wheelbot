@@ -7,6 +7,7 @@ import asyncio
 import time
 import logging
 import traceback
+import urllib.request
 from io import BytesIO
 import discord
 from discord.ext import commands
@@ -20,6 +21,7 @@ import math
 
 SPIN_DURATION = 5.0
 SPIN_FRAMES = 12
+KEEPALIVE_INTERVAL = int(os.environ.get("KEEPALIVE_INTERVAL", 240))  # 4 min (Render sleeps ~15 min)
 
 # --------------------
 # ENV
@@ -468,8 +470,33 @@ def run_bot():
         raise
 
 
+def run_keepalive():
+    """Ping our own public URL so Render free tier does not spin down the service."""
+    url = os.environ.get("RENDER_EXTERNAL_URL") or os.environ.get("KEEPALIVE_URL")
+    if not url:
+        log.warning(
+            "No RENDER_EXTERNAL_URL or KEEPALIVE_URL — keepalive disabled. "
+            "Set KEEPALIVE_URL to your Render app URL (e.g. https://wheelbot.onrender.com)."
+        )
+        return
+
+    ping_url = url.rstrip("/") + "/health"
+    log.info("Keepalive enabled, pinging %s every %ss", ping_url, KEEPALIVE_INTERVAL)
+    time.sleep(30)  # let Flask and Discord finish starting
+
+    while True:
+        try:
+            req = urllib.request.Request(ping_url, headers={"User-Agent": "wheelbot-keepalive"})
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                log.info("Keepalive ping OK (HTTP %s)", resp.status)
+        except Exception as exc:
+            log.warning("Keepalive ping failed: %s", exc)
+        time.sleep(KEEPALIVE_INTERVAL)
+
+
 def main():
     threading.Thread(target=run_bot, daemon=True).start()
+    threading.Thread(target=run_keepalive, daemon=True).start()
     port = int(os.environ.get("PORT", 10000))
     log.info("Starting web server on port %s", port)
     app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)
